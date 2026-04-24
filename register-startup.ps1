@@ -11,7 +11,7 @@ if (-not (Test-Path $EnginePath)) {
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $EnginePath
-$Shortcut.WorkingDirectory = Split-Path $EnginePath -Parent
+$Shortcut.WorkingDirectory = $PSScriptRoot
 $Shortcut.Description = "Wallpapi Video Wallpaper Engine"
 $Shortcut.Save()
 

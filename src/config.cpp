@@ -40,8 +40,9 @@ void ConfigManager::stop_watching() {
 }
 
 void ConfigManager::watch_loop(std::string path) {
-    std::filesystem::path p(path);
+    std::filesystem::path p = std::filesystem::absolute(path);
     auto dir = p.parent_path();
+    if (dir.empty()) dir = ".";
     auto filename = p.filename();
 
     m_dir_handle = CreateFileA(
@@ -55,7 +56,7 @@ void ConfigManager::watch_loop(std::string path) {
     );
 
     if (m_dir_handle == INVALID_HANDLE_VALUE) {
-        WP_ERROR("Failed to open directory for watching: {}", dir.string());
+        WP_ERROR("Failed to open directory for watching: '{}'", dir.string());
         return;
     }
 

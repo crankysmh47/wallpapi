@@ -39,7 +39,7 @@ FetchContent_Declare(sokol
 FetchContent_MakeAvailable(sokol)
 
 # Define wp-engine
-add_executable(wp-engine 
+add_executable(wp-engine WIN32
     src/main.cpp 
     src/config.cpp 
     src/ipc.cpp 
@@ -75,6 +75,7 @@ target_link_libraries(wp-engine PRIVATE
     ${MPV_LIB}
     user32 
     gdi32 
+    shell32
     dwmapi
     d3d11
     dxgi

@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include "logger.hpp"
 #include <windows.h>
 #include "graphics.hpp"
@@ -109,23 +110,41 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-int main() {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+    // Single Instance Enforcement
+    HANDLE hMutex = CreateMutexA(nullptr, TRUE, "Wallpapi_SingleInstance_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        return 0;
+    }
+
     wp::Logger::init();
-    WP_INFO("Wallpapi starting...");
+    WP_INFO("Wallpapi starting (Discreet Mode)...");
+
+    // Command-line argument parsing for WinMain
+    int argc;
+    LPWSTR* argvw = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argvw) {
+        // We could convert to char** if needed, but the current logic doesn't use them.
+        // We keep this here to support future CLI flag expansion.
+        LocalFree(argvw);
+    }
 
     HWND wallpaper_host = nullptr;
     int retries = 0;
-    while (!wallpaper_host && retries < 10) {
+    int retry_delay = 100; // Start with 100ms for fast load
+    while (!wallpaper_host && retries < 20) {
         wallpaper_host = GetWallpaperWindow();
         if (!wallpaper_host) {
-            WP_WARN("Desktop shell not ready yet. Retrying in 2 seconds... (Attempt {}/10)", retries + 1);
-            Sleep(2000);
+            WP_WARN("Desktop shell not ready yet. Retrying in {}ms... (Attempt {}/20)", retry_delay, retries + 1);
+            Sleep(retry_delay);
             retries++;
+            retry_delay = std::min(retry_delay * 2, 2000); // Exponential backoff up to 2s
         }
     }
 
     if (!wallpaper_host) {
-        WP_ERROR("Failed to attach to desktop after 10 attempts. Exiting.");
+        WP_ERROR("Failed to attach to desktop after 20 attempts. Exiting.");
+        if (hMutex) CloseHandle(hMutex);
         return 1;
     }
 
@@ -138,13 +157,12 @@ int main() {
     RegisterClassA(&wc);
 
     // Create our window
-    // We bypass creating our own child window and pass the WorkerW host directly to mpv!
-    // This prevents Windows from treating our child window as a fullscreen game and hiding the taskbar.
     HWND hwnd = wallpaper_host;
 
     g_graphics = new wp::GraphicsEngine();
     if (!g_graphics->init(hwnd)) {
         WP_ERROR("Failed to initialize graphics engine!");
+        if (hMutex) CloseHandle(hMutex);
         return 1;
     }
 
@@ -153,23 +171,26 @@ int main() {
     g_lua = new wp::LuaEngine();
     g_lua->init();
 
+    std::string config_path = std::filesystem::absolute("config.toml").string();
     g_config = new wp::ConfigManager();
-    if (g_config->load("config.toml")) {
+    if (g_config->load(config_path)) {
         std::string video = g_config->get_current().video_path;
         if (video.empty() || !std::filesystem::exists(video)) {
             WP_WARN("Configured video '{}' not found. Searching for fallback...", video);
-            for (const auto& entry : std::filesystem::directory_iterator("wallpapers")) {
-                if (entry.path().extension() == ".mp4") {
-                    video = entry.path().string();
-                    WP_INFO("Using fallback wallpaper: {}", video);
-                    break;
+            if (std::filesystem::exists("wallpapers")) {
+                for (const auto& entry : std::filesystem::directory_iterator("wallpapers")) {
+                    if (entry.path().extension() == ".mp4") {
+                        video = entry.path().string();
+                        WP_INFO("Using fallback wallpaper: {}", video);
+                        break;
+                    }
                 }
             }
         }
         g_graphics->load_video(video);
     }
     
-    g_config->start_watching("config.toml", [](const wp::Config& config) {
+    g_config->start_watching(config_path, [](const wp::Config& config) {
         if (g_graphics) {
             g_graphics->load_video(config.video_path);
         }
@@ -214,5 +235,10 @@ int main() {
     delete g_graphics;
     
     WP_INFO("Shutting down.");
+    
+    if (hMutex) {
+        ReleaseMutex(hMutex);
+        CloseHandle(hMutex);
+    }
     return 0;
 }
