@@ -76,13 +76,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (wParam == PBT_APMPOWERSTATUSCHANGE) {
                 SYSTEM_POWER_STATUS power;
                 if (GetSystemPowerStatus(&power)) {
-                    wp::g_system_state.is_on_battery = (power.ACLineStatus == 0);
-                    if (wp::g_system_state.is_on_battery) {
-                        WP_INFO("Power cord unplugged. Pausing engine.");
-                    } else {
-                        WP_INFO("Power cord connected. Resuming engine.");
+                    bool on_battery = (power.ACLineStatus == 0);
+                    if (on_battery != wp::g_system_state.is_on_battery) {
+                        wp::g_system_state.is_on_battery = on_battery;
+                        if (on_battery) {
+                            WP_INFO("Power cord unplugged. Pausing video.");
+                            if (g_graphics) g_graphics->pause_video();
+                        } else {
+                            WP_INFO("Power cord connected. Resuming video.");
+                            if (g_graphics) g_graphics->resume_video();
+                        }
                     }
                 }
+            } else if (wParam == PBT_APMSUSPEND) {
+                WP_INFO("System suspending. Pausing engine.");
+                wp::g_system_state.is_paused = true;
+                if (g_graphics) g_graphics->pause_video();
+            } else if (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND) {
+                WP_INFO("System resuming. Checking desktop hijack...");
+                wp::g_system_state.is_paused = false;
+                
+                // Re-verify the desktop window because Windows might have reset it
+                GetWallpaperWindow(); 
+                
+                if (g_graphics) g_graphics->resume_video();
             }
             return TRUE;
         case WM_DESTROY:

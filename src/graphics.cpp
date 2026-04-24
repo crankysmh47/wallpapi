@@ -83,4 +83,12 @@ void GraphicsEngine::load_video(const std::string& path) {
     }
 }
 
+void GraphicsEngine::pause_video() {
+    if (m_video_player) m_video_player->pause();
+}
+
+void GraphicsEngine::resume_video() {
+    if (m_video_player) m_video_player->play();
+}
+
 } // namespace wp

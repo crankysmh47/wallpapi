@@ -33,6 +33,8 @@ public:
     void resize(int width, int height);
     
     void load_video(const std::string& path);
+    void pause_video();
+    void resume_video();
 
 private:
     HWND m_hwnd = nullptr;
