@@ -125,7 +125,18 @@ int main() {
 
     g_config = new wp::ConfigManager();
     if (g_config->load("config.toml")) {
-        g_graphics->load_video(g_config->get_current().video_path);
+        std::string video = g_config->get_current().video_path;
+        if (video.empty() || !std::filesystem::exists(video)) {
+            WP_WARN("Configured video '{}' not found. Searching for fallback...", video);
+            for (const auto& entry : std::filesystem::directory_iterator("wallpapers")) {
+                if (entry.path().extension() == ".mp4") {
+                    video = entry.path().string();
+                    WP_INFO("Using fallback wallpaper: {}", video);
+                    break;
+                }
+            }
+        }
+        g_graphics->load_video(video);
     }
     
     g_config->start_watching("config.toml", [](const wp::Config& config) {
