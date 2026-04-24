@@ -18,11 +18,10 @@ Run `.\build.ps1` (requires CMake and MSVC).
     - If your `config.toml` is empty or invalid, Wallpapi will automatically scan the `wallpapers/` folder and play the first MP4 it finds.
 
 ## Auto-Start (Windows)
-To make Wallpapi start automatically when you log in or wake your PC:
-1.  Press `Win + R`, type `shell:startup`, and hit Enter.
-2.  Right-click in the folder and select **New > Shortcut**.
-3.  Browse to your `wp-engine.exe` location.
-4.  Wallpapi will now launch hidden in the background every time you start Windows.
+To make Wallpapi start automatically when you log in:
+1.  Open PowerShell as Administrator in the project folder.
+2.  Run `.\register-startup.ps1`.
+3.  That's it! The script creates a shortcut in your `shell:startup` folder and correctly sets the "Start In" directory so it can find its library files.
 
 ## Controls
 - **CLI**: Use `wp-cli.exe set-video "path/to/video.mp4"` to change wallpaper.

@@ -113,8 +113,21 @@ int main() {
     wp::Logger::init();
     WP_INFO("Wallpapi starting...");
 
-    HWND wallpaper_host = GetWallpaperWindow();
-    if (!wallpaper_host) return 1;
+    HWND wallpaper_host = nullptr;
+    int retries = 0;
+    while (!wallpaper_host && retries < 10) {
+        wallpaper_host = GetWallpaperWindow();
+        if (!wallpaper_host) {
+            WP_WARN("Desktop shell not ready yet. Retrying in 2 seconds... (Attempt {}/10)", retries + 1);
+            Sleep(2000);
+            retries++;
+        }
+    }
+
+    if (!wallpaper_host) {
+        WP_ERROR("Failed to attach to desktop after 10 attempts. Exiting.");
+        return 1;
+    }
 
     // Register window class
     const char CLASS_NAME[] = "Wallpapi_Window";
