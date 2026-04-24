@@ -40,6 +40,6 @@ if ($Dll) {
 }
 
 Write-Host "------------------------------------------------"
-Write-Host "SUCCESS! The Wallpaper Engine Killer is built."
+Write-Host "SUCCESS! Wallpapi is built."
 Write-Host "Binary location: build\Release\wp-engine.exe"
 Set-Location ..
