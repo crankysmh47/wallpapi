@@ -1,0 +1,4 @@
+video = "wallpapers/levi.mp4"
+pause_on_battery = true
+pause_on_fullscreen = true
+fps_limit = 60

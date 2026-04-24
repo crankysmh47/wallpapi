@@ -1,0 +1,28 @@
+# Build directories
+build/
+bin/
+obj/
+
+# Visual Studio files
+.vs/
+*.sln
+*.vcxproj
+*.filters
+*.user
+
+# Logs
+*.log
+latest.log
+
+# Dependency sources (optional, but good if using FetchContent)
+_deps/
+
+# MPV DLLs (we should probably push the libs/includes, but DLLs depend on build)
+# Actually, the user might want the DLLs to run it immediately. 
+# But usually you don't push DLLs.
+# I'll exclude build output but keep the deps/ folder.
+deps/lib/*.dll
+
+# OS files
+.DS_Store
+Thumbs.db
