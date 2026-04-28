@@ -8,6 +8,8 @@
 #include "ipc.hpp"
 
 static HWND g_workerw = nullptr;
+static HWND g_wallpaper_host = nullptr;
+static HWND g_msg_window = nullptr;
 static wp::GraphicsEngine* g_graphics = nullptr;
 static wp::ConfigManager* g_config = nullptr;
 static wp::LuaEngine* g_lua = nullptr;
@@ -98,7 +100,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 wp::g_system_state.is_paused = false;
                 
                 // Re-verify the desktop window because Windows might have reset it
-                GetWallpaperWindow(); 
+                HWND new_host = GetWallpaperWindow(); 
+                if (new_host != g_wallpaper_host) {
+                    WP_INFO("Wallpaper host changed after resume. Re-initializing graphics.");
+                    g_wallpaper_host = new_host;
+                    if (g_graphics) {
+                        g_graphics->init(g_wallpaper_host);
+                        // Reload current video
+                        if (g_config) g_graphics->load_video(g_config->get_current().video_path);
+                    }
+                }
                 
                 if (g_graphics) g_graphics->resume_video();
             }
@@ -119,6 +130,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     wp::Logger::init();
     WP_INFO("Wallpapi starting (Discreet Mode)...");
+
+    // Set working directory to executable directory to ensure resources are found
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+    std::filesystem::path p(exe_path);
+    std::filesystem::current_path(p.parent_path());
+    WP_INFO("Working directory set to: {}", std::filesystem::current_path().string());
 
     // Command-line argument parsing for WinMain
     int argc;
@@ -152,15 +170,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     const char CLASS_NAME[] = "Wallpapi_Window";
     WNDCLASSA wc = {};
     wc.lpfnWndProc = WindowProc;
-    wc.hInstance = GetModuleHandle(nullptr);
+    wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
     RegisterClassA(&wc);
 
-    // Create our window
-    HWND hwnd = wallpaper_host;
+    // Create a hidden window to receive system messages (like WM_POWERBROADCAST)
+    g_msg_window = CreateWindowExA(0, CLASS_NAME, "Wallpapi Controller", 0, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
+    if (!g_msg_window) {
+        WP_ERROR("Failed to create message window!");
+    }
 
+    g_wallpaper_host = wallpaper_host;
     g_graphics = new wp::GraphicsEngine();
-    if (!g_graphics->init(hwnd)) {
+    if (!g_graphics->init(g_wallpaper_host)) {
         WP_ERROR("Failed to initialize graphics engine!");
         if (hMutex) CloseHandle(hMutex);
         return 1;
@@ -224,6 +246,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             }
         }
     }
+
+    if (g_msg_window) DestroyWindow(g_msg_window);
 
     g_ipc->stop();
     g_config->stop_watching();
