@@ -1,11 +1,25 @@
 # Register Wallpapi for Startup
-$EnginePath = (Get-Item ".\build\Release\wp-engine.exe").FullName
+$EnginePath = $null
+$CommonPaths = @(
+    ".\build\Release\wp-engine.exe",
+    ".\build\Debug\wp-engine.exe",
+    ".\build\wp-engine.exe",
+    ".\wp-engine.exe"
+)
+
+foreach ($Path in $CommonPaths) {
+    if (Test-Path $Path) {
+        $EnginePath = (Get-Item $Path).FullName
+        break
+    }
+}
+
 $StartupFolder = [System.Environment]::GetFolderPath("Startup")
 $DesktopFolder = [System.Environment]::GetFolderPath("Desktop")
 $StartupShortcutPath = Join-Path $StartupFolder "Wallpapi.lnk"
 $ChangeWallpaperShortcutPath = Join-Path $DesktopFolder "Change Wallpaper.lnk"
 
-if (-not (Test-Path $EnginePath)) {
+if (-not $EnginePath) {
     Write-Error "Could not find wp-engine.exe. Please run .\build.ps1 first."
     exit
 }

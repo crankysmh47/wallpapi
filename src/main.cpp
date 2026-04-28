@@ -41,19 +41,37 @@ HWND GetWallpaperWindow() {
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
 
-    // Enumerate all WorkerW windows and pick the one that covers the full screen
+    // Enumerate all WorkerW windows to find the one created for the wallpaper
     g_workerw = nullptr;
     EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
         char cls[256]; GetClassNameA(hwnd, cls, 256);
-        if (strcmp(cls, "WorkerW") != 0) return TRUE;
-        RECT wr; GetWindowRect(hwnd, &wr);
-        int w = wr.right - wr.left;
-        int h = wr.bottom - wr.top;
-        if (wr.left == 0 && wr.top == 0 && w == GetSystemMetrics(SM_CXSCREEN) && h == GetSystemMetrics(SM_CYSCREEN)) {
-            g_workerw = hwnd;
+        if (strcmp(cls, "WorkerW") == 0) {
+            // The wallpaper WorkerW is usually a sibling of the window containing SHELLDLL_DefView
+            HWND defView = FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
+            if (defView) {
+                // This is the WorkerW with icons. The one we want is the next sibling.
+                g_workerw = FindWindowExA(nullptr, hwnd, "WorkerW", nullptr);
+                if (g_workerw) return FALSE; // Found it!
+            }
         }
         return TRUE;
     }, 0);
+
+    // Fallback: search for any WorkerW that covers the screen
+    if (g_workerw == nullptr) {
+        EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+            char cls[256]; GetClassNameA(hwnd, cls, 256);
+            if (strcmp(cls, "WorkerW") != 0) return TRUE;
+            RECT wr; GetWindowRect(hwnd, &wr);
+            int w = wr.right - wr.left;
+            int h = wr.bottom - wr.top;
+            if (w >= GetSystemMetrics(SM_CXSCREEN) && h >= GetSystemMetrics(SM_CYSCREEN)) {
+                g_workerw = hwnd;
+                return FALSE;
+            }
+            return TRUE;
+        }, 0);
+    }
 
     if (g_workerw == nullptr) {
         g_workerw = FindWindowExA(progman, nullptr, "WorkerW", nullptr);
@@ -127,6 +145,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         return 0;
     }
+
+    // Enable High DPI Awareness
+    SetProcessDPIAware();
 
     wp::Logger::init();
     WP_INFO("Wallpapi starting (Discreet Mode)...");
@@ -234,15 +255,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     MSG msg = {};
     while (msg.message != WM_QUIT) {
+        // If we need to render, we use PeekMessage with a timeout or high-frequency check.
+        // Currently, mpv handles its own rendering thread, so we can wait for messages.
+        bool has_work = (!wp::g_system_state.is_gaming && !wp::g_system_state.is_on_battery && !wp::g_system_state.is_paused);
+        
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         } else {
-            if (!wp::g_system_state.is_gaming && !wp::g_system_state.is_on_battery && !wp::g_system_state.is_paused) {
+            if (has_work) {
                 g_graphics->render();
+                // Avoid busy-wait if render() is empty or very fast
+                Sleep(1); 
             } else {
-                // Throttle when paused
-                Sleep(16); // ~60fps check
+                // Wait for any message (power status change, IPC, etc.)
+                WaitMessage();
             }
         }
     }

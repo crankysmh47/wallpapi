@@ -1,3 +1,21 @@
+# Check for prerequisites
+if (-not (Get-Command "cmake" -ErrorAction SilentlyContinue)) {
+    Write-Error "CMake not found! Please install it from https://cmake.org/download/"
+    exit 1
+}
+
+# Check for a compiler
+$CompilerFound = $false
+if (Get-Command "cl" -ErrorAction SilentlyContinue) { $CompilerFound = $true; $Generator = "Visual Studio" }
+elseif (Get-Command "gcc" -ErrorAction SilentlyContinue) { $CompilerFound = $true; $Generator = "MinGW Makefiles" }
+elseif (Get-Command "ninja" -ErrorAction SilentlyContinue) { $CompilerFound = $true; $Generator = "Ninja" }
+
+if (-not $CompilerFound) {
+    Write-Warning "No C++ compiler (MSVC, GCC, or Ninja) found in PATH."
+    Write-Host "Please install Visual Studio (with C++ Desktop development) or MinGW."
+    # We will try to run cmake anyway as it might find a compiler we didn't
+}
+
 # Ensure build directory is clean
 if (Test-Path "build") { 
     Write-Host "Cleaning existing build directory..."
@@ -9,7 +27,11 @@ New-Item -ItemType Directory -Force -Path "build" | Out-Null
 Set-Location "build"
 
 Write-Host "Configuring project with CMake..."
-cmake .. -DCMAKE_BUILD_TYPE=Release
+if ($Generator) {
+    cmake .. -G "$Generator" -DCMAKE_BUILD_TYPE=Release
+} else {
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "CMake configuration failed."
