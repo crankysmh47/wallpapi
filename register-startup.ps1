@@ -2,6 +2,7 @@
 $EnginePath = $null
 $CommonPaths = @(
     ".\build\Release\wp-engine.exe",
+    ".\build2\Release\wp-engine.exe",
     ".\build\Debug\wp-engine.exe",
     ".\build\wp-engine.exe",
     ".\wp-engine.exe"
@@ -40,7 +41,7 @@ $Shortcut.TargetPath = "powershell.exe"
 $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$SelectorScript`""
 $Shortcut.WorkingDirectory = (Get-Item ".").FullName
 $Shortcut.Description = "Quickly change Wallpapi wallpaper"
-$Shortcut.IconLocation = "shell32.dll, 137" # Video icon
+$Shortcut.IconLocation = "shell32.dll, 137"
 $Shortcut.Save()
 
 Write-Host "------------------------------------------------"

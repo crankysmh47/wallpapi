@@ -5,6 +5,10 @@ project(Wallpapi CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Prevent dependencies from registering their own tests (some embed cases
+# create broken CTest entries, e.g. Lua's testsuite).
+set(BUILD_TESTING OFF CACHE BOOL "Disable dependency tests" FORCE)
+
 # Force static linking of the MSVC C++ runtime.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -38,6 +42,13 @@ FetchContent_Declare(sokol
 )
 FetchContent_MakeAvailable(sokol)
 
+# 5. doctest (Single-header testing framework)
+FetchContent_Declare(doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.4.11
+)
+FetchContent_MakeAvailable(doctest)
+
 # Define wp-engine
 add_executable(wp-engine WIN32
     src/main.cpp 
@@ -47,6 +58,7 @@ add_executable(wp-engine WIN32
     src/graphics.cpp
     src/monitor.cpp
     src/lua_engine.cpp
+    src/shader_renderer.cpp
 )
 
 # Define wp-cli
@@ -79,6 +91,51 @@ target_link_libraries(wp-engine PRIVATE
     dwmapi
     d3d11
     dxgi
+    d3dcompiler
 )
 
 target_link_libraries(wp-cli PRIVATE spdlog::spdlog)
+
+# ----------------------------
+# Tests
+# ----------------------------
+include(CTest)
+enable_testing()
+
+# Ensure any dependency-added tests don't break `ctest`.
+if (TEST lua-testsuite)
+    set_tests_properties(lua-testsuite PROPERTIES DISABLED TRUE)
+endif()
+
+# Also ignore it at CTest discovery time (covers cases where the test is
+# registered with a bad working directory).
+configure_file(
+    ${CMAKE_SOURCE_DIR}/cmake/CTestCustom.cmake.in
+    ${CMAKE_BINARY_DIR}/CTestCustom.cmake
+    @ONLY
+)
+
+add_executable(wp-tests
+    tests/main.cpp
+    tests/test_config.cpp
+    tests/test_ipc_commands.cpp
+    tests/test_ipc_integration.cpp
+    tests/test_fps_limiter.cpp
+    tests/test_mpv_options.cpp
+    tests/test_wallpaper_scan.cpp
+    src/config.cpp
+    src/logger.cpp
+    src/ipc.cpp
+)
+
+target_include_directories(wp-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(wp-tests PRIVATE
+    toml11::toml11
+    doctest::doctest
+    spdlog::spdlog
+)
+
+add_test(NAME wp-tests COMMAND wp-tests)

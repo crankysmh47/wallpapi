@@ -9,19 +9,25 @@ namespace wp {
 
 class IPCServer {
 public:
-    IPCServer();
+    explicit IPCServer(std::string pipe_name = "\\\\.\\pipe\\wp_engine_pipe");
     ~IPCServer();
 
-    void start(std::function<void(const std::string&)> callback);
+    // Callback returns a response string (sent back to the client).
+    // Convention:
+    // - "OK ..." for success
+    // - "ERR ..." for failures
+    void start(std::function<std::string(const std::string&)> callback);
     void stop();
 
 private:
     void server_loop();
-    void process_command(const std::string& cmd);
+    std::string process_command(const std::string& cmd);
+    void poke_stop() const;
 
+    std::string m_pipe_name;
     std::thread m_thread;
     std::atomic<bool> m_running{false};
-    std::function<void(const std::string&)> m_callback;
+    std::function<std::string(const std::string&)> m_callback;
 };
 
 } // namespace wp

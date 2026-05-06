@@ -6,6 +6,9 @@
 #include "config.hpp"
 #include "lua_engine.hpp"
 #include "ipc.hpp"
+#include "ipc_commands.hpp"
+#include "wallpaper_scan.hpp"
+#include "fps_limiter.hpp"
 
 static HWND g_workerw = nullptr;
 static HWND g_wallpaper_host = nullptr;
@@ -14,17 +17,31 @@ static wp::GraphicsEngine* g_graphics = nullptr;
 static wp::ConfigManager* g_config = nullptr;
 static wp::LuaEngine* g_lua = nullptr;
 static wp::IPCServer* g_ipc = nullptr;
+static std::atomic<bool> g_pause_on_battery{true};
+static std::atomic<bool> g_pause_on_fullscreen{true};
+static DWORD g_main_thread_id = 0;
+
+static void apply_config_runtime_flags(const wp::Config& cfg) {
+    g_pause_on_battery = cfg.pause_on_battery;
+    g_pause_on_fullscreen = cfg.pause_on_fullscreen;
+}
 
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
-    char className[256];
-    GetClassNameA(hwnd, className, sizeof(className));
-
     HWND p = FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
     if (p != nullptr) {
-        // We found the window with the icons. The wallpaper WorkerW is usually its sibling.
+        // Method A: Sibling search
         HWND next_workerw = FindWindowExA(nullptr, hwnd, "WorkerW", nullptr);
         if (next_workerw) {
             g_workerw = next_workerw;
+            return FALSE;
+        }
+        
+        // Method B: The parent might be the WorkerW
+        HWND parent = GetParent(p);
+        char parent_cls[256];
+        GetClassNameA(parent, parent_cls, 256);
+        if (strcmp(parent_cls, "WorkerW") == 0) {
+            g_workerw = parent;
             return FALSE;
         }
     }
@@ -36,43 +53,47 @@ HWND GetWallpaperWindow() {
     
     // Create the WorkerW split
     SendMessageTimeoutA(progman, 0x052C, 0, 0, SMTO_NORMAL, 1000, nullptr);
-    Sleep(500); 
+    Sleep(500);
 
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
-
-    // Enumerate all WorkerW windows to find the one created for the wallpaper
     g_workerw = nullptr;
-    EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
-        char cls[256]; GetClassNameA(hwnd, cls, 256);
-        if (strcmp(cls, "WorkerW") == 0) {
-            // The wallpaper WorkerW is usually a sibling of the window containing SHELLDLL_DefView
-            HWND defView = FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
-            if (defView) {
-                // This is the WorkerW with icons. The one we want is the next sibling.
-                g_workerw = FindWindowExA(nullptr, hwnd, "WorkerW", nullptr);
-                if (g_workerw) return FALSE; // Found it!
-            }
-        }
-        return TRUE;
-    }, 0);
 
-    // Fallback: search for any WorkerW that covers the screen
+    // Method 1: Sibling search - find WorkerW next to the one holding SHELLDLL_DefView
+    EnumWindows(EnumWindowsProc, 0);
+
+    // Method 2: Enumerate all WorkerW windows and find the one with SHELLDLL_DefView
     if (g_workerw == nullptr) {
         EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
             char cls[256]; GetClassNameA(hwnd, cls, 256);
-            if (strcmp(cls, "WorkerW") != 0) return TRUE;
-            RECT wr; GetWindowRect(hwnd, &wr);
-            int w = wr.right - wr.left;
-            int h = wr.bottom - wr.top;
-            if (w >= GetSystemMetrics(SM_CXSCREEN) && h >= GetSystemMetrics(SM_CYSCREEN)) {
-                g_workerw = hwnd;
-                return FALSE;
+            if (strcmp(cls, "WorkerW") == 0) {
+                HWND defView = FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
+                if (defView) {
+                    g_workerw = FindWindowExA(nullptr, hwnd, "WorkerW", nullptr);
+                    if (g_workerw) return FALSE;
+                }
             }
             return TRUE;
         }, 0);
     }
 
+    // Method 3: Fullscreen search - find any WorkerW large enough to be a desktop layer
+    if (g_workerw == nullptr) {
+        EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+            char cls[256]; GetClassNameA(hwnd, cls, 256);
+            if (strcmp(cls, "WorkerW") == 0) {
+                RECT wr; GetWindowRect(hwnd, &wr);
+                int w = wr.right - wr.left;
+                int h = wr.bottom - wr.top;
+                WP_INFO("Found WorkerW: {}x{} at ({},{})", w, h, wr.left, wr.top);
+                if (w >= 1000 && h >= 600) {
+                    g_workerw = hwnd;
+                    return FALSE;
+                }
+            }
+            return TRUE;
+        }, 0);
+    }
+
+    // Method 4: Child of Progman
     if (g_workerw == nullptr) {
         g_workerw = FindWindowExA(progman, nullptr, "WorkerW", nullptr);
     }
@@ -100,6 +121,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     bool on_battery = (power.ACLineStatus == 0);
                     if (on_battery != wp::g_system_state.is_on_battery) {
                         wp::g_system_state.is_on_battery = on_battery;
+                        if (!g_pause_on_battery) {
+                            // Respect config: no auto-pause on battery.
+                            return TRUE;
+                        }
                         if (on_battery) {
                             WP_INFO("Power cord unplugged. Pausing video.");
                             if (g_graphics) g_graphics->pause_video();
@@ -116,20 +141,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             } else if (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND) {
                 WP_INFO("System resuming. Checking desktop hijack...");
                 wp::g_system_state.is_paused = false;
-                
-                // Re-verify the desktop window because Windows might have reset it
-                HWND new_host = GetWallpaperWindow(); 
+
+                // Re-verify the desktop window because Windows might have reset it after sleep
+                HWND new_host = GetWallpaperWindow();
                 if (new_host != g_wallpaper_host) {
                     WP_INFO("Wallpaper host changed after resume. Re-initializing graphics.");
                     g_wallpaper_host = new_host;
                     if (g_graphics) {
                         g_graphics->init(g_wallpaper_host);
-                        // Reload current video
-                        if (g_config) g_graphics->load_video(g_config->get_current().video_path);
+                        if (g_config) {
+                            if (!g_config->get_current().shader_path.empty()) {
+                                g_graphics->load_shader(g_config->get_current().shader_path);
+                            } else {
+                                g_graphics->load_video(
+                                    g_config->get_current().video_path,
+                                    wp::MpvRuntimeOptions{ .muted = g_config->get_current().muted }
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    if (g_graphics) {
+                        g_graphics->reparent(g_workerw);
+                        g_graphics->resume_video();
                     }
                 }
-                
-                if (g_graphics) g_graphics->resume_video();
             }
             return TRUE;
         case WM_DESTROY:
@@ -140,6 +176,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+    g_main_thread_id = GetCurrentThreadId();
     // Single Instance Enforcement
     HANDLE hMutex = CreateMutexA(nullptr, TRUE, "Wallpapi_SingleInstance_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -163,8 +200,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     int argc;
     LPWSTR* argvw = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argvw) {
-        // We could convert to char** if needed, but the current logic doesn't use them.
-        // We keep this here to support future CLI flag expansion.
         LocalFree(argvw);
     }
 
@@ -217,58 +252,138 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     std::string config_path = std::filesystem::absolute("config.toml").string();
     g_config = new wp::ConfigManager();
     if (g_config->load(config_path)) {
-        std::string video = g_config->get_current().video_path;
-        if (video.empty() || !std::filesystem::exists(video)) {
-            WP_WARN("Configured video '{}' not found. Searching for fallback...", video);
-            if (std::filesystem::exists("wallpapers")) {
-                for (const auto& entry : std::filesystem::directory_iterator("wallpapers")) {
-                    if (entry.path().extension() == ".mp4") {
-                        video = entry.path().string();
-                        WP_INFO("Using fallback wallpaper: {}", video);
-                        break;
+        apply_config_runtime_flags(g_config->get_current());
+        if (!g_config->get_current().shader_path.empty()) {
+            g_graphics->load_shader(g_config->get_current().shader_path);
+        } else {
+            std::string video = g_config->get_current().video_path;
+            if (video.empty() || !std::filesystem::exists(video)) {
+                if (std::filesystem::exists("wallpapers")) {
+                    const auto pick = wp::find_first_by_extension(
+                        "wallpapers",
+                        {".mp4", ".mkv", ".avi", ".webm", ".mov", ".jpg", ".jpeg", ".png", ".webp"}
+                    );
+                    if (pick.has_value()) {
+                        video = pick->string();
                     }
                 }
             }
+            g_graphics->load_video(video, wp::MpvRuntimeOptions{ .muted = g_config->get_current().muted });
         }
-        g_graphics->load_video(video);
     }
     
     g_config->start_watching(config_path, [](const wp::Config& config) {
         if (g_graphics) {
-            g_graphics->load_video(config.video_path);
+            apply_config_runtime_flags(config);
+            if (!config.shader_path.empty()) {
+                g_graphics->load_shader(config.shader_path);
+            } else {
+                g_graphics->load_video(config.video_path, wp::MpvRuntimeOptions{ .muted = config.muted });
+            }
         }
     });
 
     g_ipc = new wp::IPCServer();
-    g_ipc->start([](const std::string& cmd) {
-        if (cmd.find("set-video ") == 0) {
-            std::string path = cmd.substr(10);
-            if (g_graphics) g_graphics->load_video(path);
-        } else if (cmd == "pause") {
-            wp::g_system_state.is_paused = true;
-        } else if (cmd == "resume") {
-            wp::g_system_state.is_paused = false;
+    g_ipc->start([](const std::string& cmd) -> std::string {
+        const auto parsed = wp::parse_ipc_command(cmd);
+        switch (parsed.type) {
+            case wp::IPCCommandType::SetVideo:
+                if (g_graphics) g_graphics->load_video(parsed.argument, wp::MpvRuntimeOptions{ .muted = g_config ? g_config->get_current().muted : true });
+                if (g_config) g_config->set_current_video(parsed.argument);
+                return "OK set-video";
+            case wp::IPCCommandType::SetImage:
+                if (g_graphics) g_graphics->load_video(parsed.argument, wp::MpvRuntimeOptions{ .muted = g_config ? g_config->get_current().muted : true });
+                if (g_config) g_config->set_current_video(parsed.argument);
+                return "OK set-image";
+            case wp::IPCCommandType::SetShader:
+                if (g_graphics) g_graphics->load_shader(parsed.argument);
+                if (g_config) g_config->set_current_shader(parsed.argument);
+                return "OK set-shader";
+            case wp::IPCCommandType::Pause:
+                wp::g_system_state.is_paused = true;
+                if (g_graphics) g_graphics->pause_video();
+                return "OK pause";
+            case wp::IPCCommandType::Resume:
+                wp::g_system_state.is_paused = false;
+                if (g_graphics) g_graphics->resume_video();
+                return "OK resume";
+            case wp::IPCCommandType::GetStatus: {
+                const auto paused = wp::g_system_state.is_paused.load() ? "true" : "false";
+                const auto on_battery = wp::g_system_state.is_on_battery.load() ? "true" : "false";
+                const auto fullscreen = wp::g_system_state.is_gaming.load() ? "true" : "false";
+
+                std::string mode = "none";
+                std::string path;
+                if (g_config) {
+                    if (!g_config->get_current().shader_path.empty()) {
+                        mode = "shader";
+                        path = g_config->get_current().shader_path;
+                    } else if (!g_config->get_current().video_path.empty()) {
+                        mode = "media";
+                        path = g_config->get_current().video_path;
+                    }
+                }
+
+                return "OK status mode=" + mode + " paused=" + paused + " on_battery=" + on_battery +
+                       " fullscreen=" + fullscreen + " path=" + path;
+            }
+            case wp::IPCCommandType::ListWallpapers: {
+                const auto list = wp::list_files_by_extension(
+                    "wallpapers",
+                    {".mp4", ".mkv", ".avi", ".webm", ".mov", ".jpg", ".jpeg", ".png", ".webp", ".gif"}
+                );
+                std::string resp = "OK wallpapers\n";
+                for (const auto& p : list) {
+                    resp += p.string();
+                    resp += "\n";
+                }
+                return resp;
+            }
+            case wp::IPCCommandType::Stop:
+                // Ask the main message loop to exit.
+                PostThreadMessageA(g_main_thread_id, WM_QUIT, 0, 0);
+                return "OK stop";
+            case wp::IPCCommandType::Unknown:
+            default:
+                WP_WARN("Unknown IPC command: '{}'", cmd);
+                return "ERR unknown-command";
         }
     });
 
     WP_INFO("Wallpapi initialized.");
     
+    // Initial render to avoid black screen if starting paused
+    g_graphics->render();
+
     MSG msg = {};
     while (msg.message != WM_QUIT) {
-        // If we need to render, we use PeekMessage with a timeout or high-frequency check.
-        // Currently, mpv handles its own rendering thread, so we can wait for messages.
-        bool has_work = (!wp::g_system_state.is_gaming && !wp::g_system_state.is_on_battery && !wp::g_system_state.is_paused);
+        const bool fullscreen_block = (g_pause_on_fullscreen && wp::g_system_state.is_gaming);
+        const bool battery_block = (g_pause_on_battery && wp::g_system_state.is_on_battery);
+        bool has_work = (!fullscreen_block && !battery_block && !wp::g_system_state.is_paused);
         
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         } else {
             if (has_work) {
+                const auto frame_start = std::chrono::steady_clock::now();
+                // Update mouse position for shader interaction
+                POINT mp;
+                if (GetCursorPos(&mp)) {
+                    ScreenToClient(wallpaper_host, &mp);
+                    bool clicking = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                    g_graphics->set_mouse((float)mp.x, (float)mp.y, clicking);
+                }
                 g_graphics->render();
-                // Avoid busy-wait if render() is empty or very fast
-                Sleep(1); 
+                const auto frame_end = std::chrono::steady_clock::now();
+                const int fps_limit = g_config ? g_config->get_current().fps_limit : 0;
+                const auto sleep_for = wp::compute_frame_sleep_ms(fps_limit, frame_start, frame_end);
+                if (sleep_for.count() > 0) {
+                    Sleep((DWORD)sleep_for.count());
+                } else {
+                    Sleep(1);
+                }
             } else {
-                // Wait for any message (power status change, IPC, etc.)
                 WaitMessage();
             }
         }

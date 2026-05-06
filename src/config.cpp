@@ -1,8 +1,60 @@
 #include "config.hpp"
 #include "logger.hpp"
 #include <filesystem>
+#include <fstream>
 
 namespace wp {
+
+static std::string resolve_relative_to_config_dir(const std::string& config_path, const std::string& value) {
+    if (value.empty()) return value;
+
+    std::filesystem::path p(value);
+    if (p.is_absolute()) return value;
+
+    std::filesystem::path cfg(config_path);
+    auto dir = std::filesystem::absolute(cfg).parent_path();
+    if (dir.empty()) dir = ".";
+
+    std::error_code ec;
+    auto combined = std::filesystem::weakly_canonical(dir / p, ec);
+    if (ec) {
+        // If canonicalization fails (e.g. target doesn't exist), keep a normalized join.
+        combined = dir / p;
+    }
+    return combined.string();
+}
+
+static bool write_config_file(const std::string& path, const Config& cfg) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) return false;
+
+    auto quote = [](const std::string& s) -> std::string {
+        std::string r;
+        r.reserve(s.size() + 2);
+        r.push_back('"');
+        for (char c : s) {
+            switch (c) {
+                case '\\': r += "\\\\"; break;
+                case '"': r += "\\\""; break;
+                case '\n': r += "\\n"; break;
+                case '\r': r += "\\r"; break;
+                case '\t': r += "\\t"; break;
+                default: r.push_back(c); break;
+            }
+        }
+        r.push_back('"');
+        return r;
+    };
+
+    // Keep format stable and human-editable.
+    out << "video = " << quote(cfg.video_path) << "\n";
+    out << "shader = " << quote(cfg.shader_path) << "\n";
+    out << "muted = " << (cfg.muted ? "true" : "false") << "\n";
+    out << "fps_limit = " << cfg.fps_limit << "\n";
+    out << "pause_on_battery = " << (cfg.pause_on_battery ? "true" : "false") << "\n";
+    out << "pause_on_fullscreen = " << (cfg.pause_on_fullscreen ? "true" : "false") << "\n";
+    return true;
+}
 
 ConfigManager::ConfigManager() {}
 ConfigManager::~ConfigManager() { stop_watching(); }
@@ -10,17 +62,63 @@ ConfigManager::~ConfigManager() { stop_watching(); }
 bool ConfigManager::load(const std::string& path) {
     try {
         auto data = toml::parse(path);
-        m_current.video_path = toml::find_or<std::string>(data, "video", "");
-        m_current.shader_path = toml::find_or<std::string>(data, "shader", "");
-        m_current.muted = toml::find_or<bool>(data, "muted", true);
+        Config next;
+        next.video_path = toml::find_or<std::string>(data, "video", "");
+        next.shader_path = toml::find_or<std::string>(data, "shader", "");
+        next.muted = toml::find_or<bool>(data, "muted", true);
+        next.fps_limit = toml::find_or<int>(data, "fps_limit", 60);
+        next.pause_on_battery = toml::find_or<bool>(data, "pause_on_battery", true);
+        next.pause_on_fullscreen = toml::find_or<bool>(data, "pause_on_fullscreen", true);
+
+        // Resolve relative media paths against the config file directory.
+        next.video_path = resolve_relative_to_config_dir(path, next.video_path);
+        next.shader_path = resolve_relative_to_config_dir(path, next.shader_path);
+
+        {
+            std::scoped_lock lk(m_mutex);
+            m_current = std::move(next);
+            m_path = path;
+        }
         
-        WP_INFO("Config loaded: video={}, shader={}, muted={}", 
-            m_current.video_path, m_current.shader_path, m_current.muted);
+        WP_INFO("Config loaded: video={}, shader={}, muted={}, fps={}, pause_on_battery={}, pause_on_fullscreen={}",
+            m_current.video_path,
+            m_current.shader_path,
+            m_current.muted,
+            m_current.fps_limit,
+            m_current.pause_on_battery,
+            m_current.pause_on_fullscreen);
         return true;
     } catch (const std::exception& e) {
         WP_ERROR("Failed to parse config: {}", e.what());
         return false;
     }
+}
+
+bool ConfigManager::save() const {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    return write_config_file(m_path, m_current);
+}
+
+bool ConfigManager::save_as(const std::string& path) const {
+    std::scoped_lock lk(m_mutex);
+    return write_config_file(path, m_current);
+}
+
+bool ConfigManager::set_current_video(const std::string& video_path) {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    m_current.video_path = resolve_relative_to_config_dir(m_path, video_path);
+    m_current.shader_path.clear();
+    return write_config_file(m_path, m_current);
+}
+
+bool ConfigManager::set_current_shader(const std::string& shader_path) {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    m_current.shader_path = resolve_relative_to_config_dir(m_path, shader_path);
+    m_current.video_path.clear();
+    return write_config_file(m_path, m_current);
 }
 
 void ConfigManager::start_watching(const std::string& path, std::function<void(const Config&)> callback) {

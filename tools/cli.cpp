@@ -7,6 +7,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "Usage: wp-cli <command> [args...]" << std::endl;
         std::cout << "Example: wp-cli set-video \"wallpapers/video.mp4\"" << std::endl;
+        std::cout << "Other: wp-cli status | wp-cli list | wp-cli stop" << std::endl;
         return 1;
     }
 
@@ -38,8 +39,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "Command sent successfully: " << cmd << std::endl;
+    // Read a short response (server returns OK/ERR text).
+    char buffer[4096];
+    DWORD bytes_read = 0;
+    if (ReadFile(pipe, buffer, sizeof(buffer) - 1, &bytes_read, nullptr)) {
+        buffer[bytes_read] = '\0';
+        std::string resp(buffer);
+        std::cout << resp << std::endl;
+        CloseHandle(pipe);
+        return (resp.rfind("OK", 0) == 0) ? 0 : 2;
+    }
+
+    std::cerr << "Error: No response from engine." << std::endl;
 
     CloseHandle(pipe);
-    return 0;
+    return 3;
 }

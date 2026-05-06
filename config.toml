@@ -1,4 +1,5 @@
-video = "wallpapers/levi.mp4"
+# video = "wallpapers/levi.mp4"
+shader = "shaders/plasma.glsl"
 pause_on_battery = true
 pause_on_fullscreen = true
 fps_limit = 60

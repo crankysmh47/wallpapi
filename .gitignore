@@ -1,3 +1,10 @@
+# Build output
+build/
+build*/
+build_test/
+out.txt
+err.txt
+latest.log
 # Build directories
 build/
 bin/
