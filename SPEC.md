@@ -99,7 +99,7 @@
 - ✅ Resume: re-parents render window if WorkerW address changed
 - 🔧 **Wake-to-wallpaper-not-loading bug** — on some machines Windows resets the WorkerW hierarchy on resume; the current re-init path (`g_graphics->init()`) creates a new child window but doesn't destroy the old one, leading to orphaned windows. Full teardown + reinit sequence needed.
 - 🔧 **Multi-monitor sleep/wake bug** — on machines with multiple displays, the WorkerW may be recreated for each monitor independently on wake; current code only tracks a single `g_wallpaper_host` pointer.
-- ❌ Full graphics teardown + clean reinit on wake (destroy old render window, create new one, reload wallpaper)
+- ✅ Full graphics teardown + clean reinit on wake (destroy old render window, create new one, reload wallpaper)
 - ❌ Per-monitor wake recovery
 
 ### 4.2 Fullscreen / Gaming Detection
@@ -107,7 +107,7 @@
 - ✅ Auto-pause (`g_system_state.is_gaming = true`) when fullscreen non-desktop window detected
 - ✅ Auto-resume when fullscreen app loses focus
 - 🔧 **`pause_on_fullscreen` config flag exists in TOML but is not wired** — fullscreen pause always active regardless of config
-- ❌ Respect `pause_on_fullscreen = false` config flag
+- ✅ Respect `pause_on_fullscreen = false` config flag
 
 ---
 
@@ -125,7 +125,7 @@
 - ❌ Proper installer (NSIS or Inno Setup) that:
   - Copies binaries + DLLs + shaders + wallpapers to `%LOCALAPPDATA%\Programs\Wallpapi`
   - Adds `wp-cli.exe` to user PATH
-  - Registers startup task
+  - Registers startup shortcut
   - Creates Start Menu shortcut for the GUI
   - Provides uninstaller
 - ❌ Pre-built release ZIP/installer on GitHub Releases (CI-built via GitHub Actions)
@@ -218,12 +218,12 @@
   - `wallpapers/` placeholder folder
   - `config.toml` default
   - `install.ps1` (one-click setup)
-- ❌ `install.ps1` script that:
+- ✅ `install.ps1` script that:
   - Copies files to `%LOCALAPPDATA%\Programs\Wallpapi`
   - Adds `wp-cli` to user PATH via registry
   - Registers startup task
   - Opens the wallpapers folder so user can drop in their videos
-- ❌ GitHub Actions CI: build on Windows Server 2022, run `setup_deps.ps1`, `build.ps1`, package artifacts
+- ✅ GitHub Actions CI: builds on Windows and runs tests (adds `setup_deps.ps1`, builds `wp-engine` and `wp-tests`)
 - ❌ Auto-update check on startup (query GitHub releases API, notify via tray)
 
 ---

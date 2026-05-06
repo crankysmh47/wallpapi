@@ -30,6 +30,7 @@ public:
     ~GraphicsEngine();
 
     bool init(HWND hwnd);
+    bool reinit(HWND hwnd);
     void render();
     void cleanup();
 

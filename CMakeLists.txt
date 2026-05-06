@@ -56,6 +56,7 @@ add_executable(wp-engine WIN32
     src/ipc.cpp 
     src/logger.cpp
     src/graphics.cpp
+    src/video_player.cpp
     src/monitor.cpp
     src/lua_engine.cpp
     src/shader_renderer.cpp
@@ -121,21 +122,45 @@ add_executable(wp-tests
     tests/test_ipc_commands.cpp
     tests/test_ipc_integration.cpp
     tests/test_fps_limiter.cpp
+    tests/test_fullscreen_detect.cpp
+    tests/test_graphics_reinit_win32.cpp
     tests/test_mpv_options.cpp
     tests/test_wallpaper_scan.cpp
     src/config.cpp
     src/logger.cpp
     src/ipc.cpp
+    src/graphics.cpp
+    src/video_player.cpp
+    src/shader_renderer.cpp
 )
 
 target_include_directories(wp-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/deps/include
 )
 
 target_link_libraries(wp-tests PRIVATE
     toml11::toml11
     doctest::doctest
     spdlog::spdlog
+    user32
+    d3d11
+    dxgi
+    d3dcompiler
+)
+
+# Link libmpv to tests (needed by video_player.cpp)
+find_library(MPV_LIB_TEST
+    NAMES mpv libmpv mpv-2 libmpv-2 libmpv.dll.a
+    PATHS ${CMAKE_SOURCE_DIR}/deps/lib
+    REQUIRED
+)
+target_link_libraries(wp-tests PRIVATE ${MPV_LIB_TEST})
+
+add_custom_command(TARGET wp-tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/deps/lib/libmpv-2.dll
+        $<TARGET_FILE_DIR:wp-tests>/libmpv-2.dll
 )
 
 add_test(NAME wp-tests COMMAND wp-tests)

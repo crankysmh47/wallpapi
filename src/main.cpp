@@ -148,7 +148,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     WP_INFO("Wallpaper host changed after resume. Re-initializing graphics.");
                     g_wallpaper_host = new_host;
                     if (g_graphics) {
-                        g_graphics->init(g_wallpaper_host);
+                        g_graphics->reinit(g_wallpaper_host);
                         if (g_config) {
                             if (!g_config->get_current().shader_path.empty()) {
                                 g_graphics->load_shader(g_config->get_current().shader_path);

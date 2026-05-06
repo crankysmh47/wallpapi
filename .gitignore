@@ -5,6 +5,7 @@ build_test/
 out.txt
 err.txt
 latest.log
+deps/
 # Build directories
 build/
 bin/

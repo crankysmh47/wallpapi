@@ -1,5 +1,6 @@
 #include "monitor.hpp"
 #include "logger.hpp"
+#include "fullscreen_detect.hpp"
 
 namespace wp {
 
@@ -34,10 +35,10 @@ void CALLBACK Monitor::win_event_proc(HWINEVENTHOOK hWinEventHook, DWORD event, 
         // Check if foreground window is fullscreen
         RECT rect;
         if (GetWindowRect(hwnd, &rect)) {
-            int w = rect.right - rect.left;
-            int h = rect.bottom - rect.top;
-            
-            if (w >= GetSystemMetrics(SM_CXSCREEN) && h >= GetSystemMetrics(SM_CYSCREEN)) {
+            HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi = {};
+            mi.cbSize = sizeof(mi);
+            if (mon && GetMonitorInfoA(mon, &mi) && is_fullscreen_on_monitor(rect, mi.rcMonitor)) {
                 // Potential fullscreen app
                 char class_name[256];
                 GetClassNameA(hwnd, class_name, sizeof(class_name));

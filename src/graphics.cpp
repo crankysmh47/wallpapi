@@ -1,50 +1,8 @@
 #include "graphics.hpp"
 #include "logger.hpp"
 #include "shader_renderer.hpp"
-#include <mpv/client.h>
 
 namespace wp {
-
-// --- VideoPlayer Implementation ---
-
-VideoPlayer::VideoPlayer(HWND hwnd, MpvRuntimeOptions options) : m_options(std::move(options)) {
-    m_mpv = mpv_create();
-    if (!m_mpv) {
-        WP_ERROR("Failed to create mpv instance");
-        return;
-    }
-
-    int64_t wid = (int64_t)hwnd;
-    mpv_set_option(m_mpv, "wid", MPV_FORMAT_INT64, &wid);
-
-    for (const auto& [k, v] : build_mpv_options(m_options)) {
-        mpv_set_option_string(m_mpv, k.c_str(), v.c_str());
-    }
-    
-    int err = mpv_initialize(m_mpv);
-    if (err < 0) {
-        WP_ERROR("Failed to initialize mpv: {}", mpv_error_string(err));
-    }
-}
-
-VideoPlayer::~VideoPlayer() {
-    if (m_mpv) mpv_terminate_destroy(m_mpv);
-}
-
-bool VideoPlayer::load(const std::string& path) {
-    const char* cmd[] = { "loadfile", path.c_str(), nullptr };
-    return mpv_command(m_mpv, cmd) >= 0;
-}
-
-void VideoPlayer::play() {
-    int pause = 0;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &pause);
-}
-
-void VideoPlayer::pause() {
-    int pause = 1;
-    mpv_set_property(m_mpv, "pause", MPV_FORMAT_FLAG, &pause);
-}
 
 // --- GraphicsEngine Implementation ---
 
@@ -100,7 +58,30 @@ void GraphicsEngine::render() {
     }
 }
 
-void GraphicsEngine::cleanup() {}
+void GraphicsEngine::cleanup() {
+    // Tear down in a safe order:
+    // 1) Stop renderers/players that may be using the window/device.
+    m_shader_mode = false;
+    m_shader_renderer.reset();
+    m_video_player.reset();
+
+    // 2) Destroy the render window.
+    if (m_render_hwnd && IsWindow(m_render_hwnd)) {
+        DestroyWindow(m_render_hwnd);
+    }
+    m_render_hwnd = nullptr;
+
+    // 3) Reset bookkeeping.
+    m_hwnd = nullptr;
+    m_width = 0;
+    m_height = 0;
+    m_video_options = MpvRuntimeOptions{};
+}
+
+bool GraphicsEngine::reinit(HWND hwnd) {
+    cleanup();
+    return init(hwnd);
+}
 
 void GraphicsEngine::resize(int width, int height) {
     m_width = width;
@@ -133,20 +114,6 @@ void GraphicsEngine::reparent(HWND new_parent) {
     }
 }
 
-void GraphicsEngine::load_video(const std::string& path, MpvRuntimeOptions options) {
-    m_shader_mode = false;
-    // Recreate the player if options changed (e.g. mute toggled).
-    if (!m_video_player || m_video_options.muted != options.muted) {
-        m_video_player.reset();
-        m_video_player = std::make_unique<VideoPlayer>(m_render_hwnd, options);
-        m_video_options = options;
-    }
-    if (m_video_player) {
-        m_video_player->load(path);
-        m_video_player->play();
-    }
-}
-
 bool GraphicsEngine::load_shader(const std::string& path) {
     if (!m_shader_renderer) {
         m_shader_renderer = std::make_unique<ShaderRenderer>();
@@ -162,14 +129,6 @@ bool GraphicsEngine::load_shader(const std::string& path) {
         return true;
     }
     return false;
-}
-
-void GraphicsEngine::pause_video() {
-    if (m_video_player) m_video_player->pause();
-}
-
-void GraphicsEngine::resume_video() {
-    if (m_video_player) m_video_player->play();
 }
 
 void GraphicsEngine::set_mouse(float x, float y, bool clicking) {
