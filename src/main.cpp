@@ -36,6 +36,29 @@ static void apply_config_runtime_flags(const wp::Config& cfg) {
     g_pause_on_fullscreen = cfg.pause_on_fullscreen;
 }
 
+
+static std::string format_config_status() {
+    if (!g_config) return "ERR no-config";
+    const auto& cfg = g_config->get_current();
+    std::ostringstream oss;
+    oss << "OK config"
+        << " video=" << cfg.video_path
+        << " muted=" << (cfg.muted ? "true" : "false")
+        << " pause_on_battery=" << (cfg.pause_on_battery ? "true" : "false")
+        << " pause_on_fullscreen=" << (cfg.pause_on_fullscreen ? "true" : "false");
+    return oss.str();
+}
+
+static std::string apply_wallpaper_path(const std::string& path) {
+    if (!g_graphics) return "ERR engine-not-ready";
+    const auto opts = wp::VideoOptions{ .muted = g_config ? g_config->get_current().muted : true };
+    g_graphics->load_video(path, opts);
+    if (g_config && !g_config->set_current_video(path)) {
+        return "ERR file-not-found";
+    }
+    return "OK set-video path=" + path;
+}
+
 static void reload_current_wallpaper() {
     if (!g_graphics || !g_config) return;
     const auto& cfg = g_config->get_current();
