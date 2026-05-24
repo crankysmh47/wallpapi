@@ -1,0 +1,26 @@
+Wallpapi - Getting Started
+==========================
+
+1. Open PowerShell in this folder.
+
+2. Run:
+     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+     .\install.ps1
+
+3. Accept the license agreement.
+
+4. Open a NEW terminal window.
+
+5. Run:
+     wp-cli status
+     wp-ui
+
+The wallpaper engine starts automatically at login.
+
+Add your own videos or images to:
+  %LOCALAPPDATA%\Programs\Wallpapi\wallpapers
+
+Uninstall:
+  %LOCALAPPDATA%\Programs\Wallpapi\uninstall.ps1
+
+Documentation: README.md and docs\INSTALL.md

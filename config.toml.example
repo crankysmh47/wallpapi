@@ -1,0 +1,9 @@
+# Wallpapi configuration
+# Copy to config.toml and edit, or use wp-cli / wp-ui to change settings.
+
+# Path to wallpaper (video or image). Leave empty to auto-pick from wallpapers/
+video = ""
+
+muted = true
+pause_on_battery = true
+pause_on_fullscreen = true
