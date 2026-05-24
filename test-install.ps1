@@ -38,19 +38,23 @@ try {
         throw "EULA not copied to install directory"
     }
 
-    Write-Host "[3/6] Starting wp-engine..."
+    $env:WALLPAPI_CI_TEST = "1"
+    Write-Host "[3/6] Starting wp-engine (CI test mode)..."
     $engineProc = Start-Process -FilePath (Join-Path $InstallRoot "wp-engine.exe") `
         -WorkingDirectory $InstallRoot -PassThru -WindowStyle Hidden
-    Start-Sleep -Seconds 4
-
-    if ($engineProc.HasExited) {
-        throw "wp-engine exited early with code $($engineProc.ExitCode)"
+    $cli = Join-Path $InstallRoot "wp-cli.exe"
+    $deadline = (Get-Date).AddSeconds(45)
+    $status = ""
+    while ((Get-Date) -lt $deadline) {
+        if ($engineProc.HasExited) {
+            throw "wp-engine exited early with code $($engineProc.ExitCode)"
+        }
+        $status = & $cli status 2>&1 | Out-String
+        if ($status -match "OK status") { break }
+        Start-Sleep -Seconds 2
     }
 
-    $cli = Join-Path $InstallRoot "wp-cli.exe"
-
     Write-Host "[4/6] wp-cli status..."
-    $status = & $cli status 2>&1 | Out-String
     Write-Host $status
     if ($status -notmatch "OK status") { throw "Unexpected status response: $status" }
 
@@ -73,6 +77,7 @@ catch {
     exit 1
 }
 finally {
+    Remove-Item Env:WALLPAPI_CI_TEST -ErrorAction SilentlyContinue
     if ($engineProc -and -not $engineProc.HasExited) {
         Write-Host "Stopping test engine..."
         $stopCli = Join-Path $InstallRoot "wp-cli.exe"

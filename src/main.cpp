@@ -22,6 +22,7 @@ static wp::IPCServer* g_ipc = nullptr;
 static std::atomic<bool> g_pause_on_battery{true};
 static std::atomic<bool> g_pause_on_fullscreen{true};
 static DWORD g_main_thread_id = 0;
+static bool g_ci_test_mode = false;
 
 static const std::vector<std::string>& media_extensions() {
     static const std::vector<std::string> exts = {
@@ -50,7 +51,15 @@ static std::string format_config_status() {
 }
 
 static std::string apply_wallpaper_path(const std::string& path) {
-    if (!g_graphics) return "ERR engine-not-ready";
+    if (!g_graphics) {
+        if (g_ci_test_mode) {
+            if (g_config && !g_config->set_current_video(path)) {
+                return "ERR file-not-found";
+            }
+            return "OK set-video path=" + path;
+        }
+        return "ERR engine-not-ready";
+    }
     const auto opts = wp::VideoOptions{ .muted = g_config ? g_config->get_current().muted : true };
     g_graphics->load_video(path, opts);
     if (g_config && !g_config->set_current_video(path)) {
@@ -253,14 +262,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     SetProcessDPIAware();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
-    if (!wp::media_foundation_startup()) {
+    {
+        char ci_flag[8] = {};
+        if (GetEnvironmentVariableA("WALLPAPI_CI_TEST", ci_flag, sizeof(ci_flag)) > 0) {
+            g_ci_test_mode = true;
+        }
+    }
+
+    if (!g_ci_test_mode && !wp::media_foundation_startup()) {
         WP_ERROR("Failed to start Media Foundation.");
         if (hMutex) CloseHandle(hMutex);
         return 1;
     }
 
     wp::Logger::init();
-    WP_INFO("Wallpapi starting...");
+    WP_INFO("Wallpapi starting...{}", g_ci_test_mode ? " (CI test mode)" : "");
 
     char exe_path[MAX_PATH];
     GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
@@ -268,48 +284,61 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     std::filesystem::current_path(p.parent_path());
     WP_INFO("Working directory set to: {}", std::filesystem::current_path().string());
 
-    HWND wallpaper_host = nullptr;
-    int retries = 0;
-    int retry_delay = 100;
-    while (!wallpaper_host && retries < 20) {
-        wallpaper_host = GetWallpaperWindow();
-        if (!wallpaper_host) {
-            WP_WARN("Desktop shell not ready yet. Retrying in {}ms... (Attempt {}/20)", retry_delay, retries + 1);
-            Sleep(retry_delay);
-            retries++;
-            retry_delay = std::min(retry_delay * 2, 2000);
+    if (!g_ci_test_mode) {
+        HWND wallpaper_host = nullptr;
+        int retries = 0;
+        int retry_delay = 100;
+        while (!wallpaper_host && retries < 20) {
+            wallpaper_host = GetWallpaperWindow();
+            if (!wallpaper_host) {
+                WP_WARN("Desktop shell not ready yet. Retrying in {}ms... (Attempt {}/20)", retry_delay, retries + 1);
+                Sleep(retry_delay);
+                retries++;
+                retry_delay = std::min(retry_delay * 2, 2000);
+            }
         }
+
+        if (!wallpaper_host) {
+            WP_ERROR("Failed to attach to desktop after 20 attempts. Exiting.");
+            if (hMutex) CloseHandle(hMutex);
+            return 1;
+        }
+
+        const char CLASS_NAME[] = "Wallpapi_Window";
+        WNDCLASSA wc = {};
+        wc.lpfnWndProc = WindowProc;
+        wc.hInstance = hInstance;
+        wc.lpszClassName = CLASS_NAME;
+        RegisterClassA(&wc);
+
+        g_msg_window = CreateWindowExA(0, CLASS_NAME, "Wallpapi Controller", 0, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
+        if (!g_msg_window) {
+            WP_ERROR("Failed to create message window!");
+        }
+
+        g_wallpaper_host = wallpaper_host;
+        wp::destroy_stale_render_windows();
+
+        g_graphics = new wp::GraphicsEngine();
+        if (!g_graphics->init(g_wallpaper_host)) {
+            WP_ERROR("Failed to initialize graphics engine!");
+            if (hMutex) CloseHandle(hMutex);
+            return 1;
+        }
+    } else {
+        const char CLASS_NAME[] = "Wallpapi_Window";
+        WNDCLASSA wc = {};
+        wc.lpfnWndProc = WindowProc;
+        wc.hInstance = hInstance;
+        wc.lpszClassName = CLASS_NAME;
+        RegisterClassA(&wc);
+        g_msg_window = CreateWindowExA(0, CLASS_NAME, "Wallpapi Controller", 0, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
+        WP_INFO("CI test mode: desktop wallpaper disabled; IPC server only");
     }
 
-    if (!wallpaper_host) {
-        WP_ERROR("Failed to attach to desktop after 20 attempts. Exiting.");
-        if (hMutex) CloseHandle(hMutex);
-        return 1;
+    if (!g_ci_test_mode) {
+        wp::Monitor::init();
     }
-
-    const char CLASS_NAME[] = "Wallpapi_Window";
-    WNDCLASSA wc = {};
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
-    RegisterClassA(&wc);
-
-    g_msg_window = CreateWindowExA(0, CLASS_NAME, "Wallpapi Controller", 0, 0, 0, 0, 0, nullptr, nullptr, hInstance, nullptr);
-    if (!g_msg_window) {
-        WP_ERROR("Failed to create message window!");
-    }
-
-    g_wallpaper_host = wallpaper_host;
-    wp::destroy_stale_render_windows();
-
-    g_graphics = new wp::GraphicsEngine();
-    if (!g_graphics->init(g_wallpaper_host)) {
-        WP_ERROR("Failed to initialize graphics engine!");
-        if (hMutex) CloseHandle(hMutex);
-        return 1;
-    }
-
-    wp::Monitor::init();
 
     std::string config_path = std::filesystem::absolute("config.toml").string();
     g_config = new wp::ConfigManager();
@@ -317,13 +346,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         apply_config_runtime_flags(g_config->get_current());
         const auto video = resolve_startup_video();
         if (!video.empty()) {
-            g_graphics->load_video(video, wp::VideoOptions{ .muted = g_config->get_current().muted });
+            if (g_graphics) {
+                g_graphics->load_video(video, wp::VideoOptions{ .muted = g_config->get_current().muted });
+            }
             g_config->set_current_video(video);
         }
     }
 
     g_config->start_watching(config_path, [](const wp::Config& config) {
-        if (!g_graphics) return;
+        if (!g_graphics || g_ci_test_mode) return;
         apply_config_runtime_flags(config);
         if (config.video_path.empty() || !std::filesystem::exists(config.video_path)) {
             return;
@@ -459,11 +490,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         const bool battery_block = (g_pause_on_battery && wp::g_system_state.is_on_battery);
         const bool should_play = (!fullscreen_block && !battery_block && !wp::g_system_state.is_paused);
 
-        if (should_play != was_playing) {
-            was_playing = should_play;
-            if (g_graphics) {
-                if (should_play) g_graphics->resume_video();
-                else g_graphics->pause_video();
+        if (!g_ci_test_mode) {
+            if (should_play != was_playing) {
+                was_playing = should_play;
+                if (g_graphics) {
+                    if (should_play) g_graphics->resume_video();
+                    else g_graphics->pause_video();
+                }
             }
         }
 
@@ -479,7 +512,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     g_ipc->stop();
     g_config->stop_watching();
-    wp::Monitor::cleanup();
+    if (!g_ci_test_mode) {
+        wp::Monitor::cleanup();
+    }
 
     delete g_ipc;
     delete g_config;
@@ -487,7 +522,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     WP_INFO("Shutting down.");
 
-    wp::media_foundation_shutdown();
+    if (!g_ci_test_mode) {
+        wp::media_foundation_shutdown();
+    }
     CoUninitialize();
 
     if (hMutex) {
