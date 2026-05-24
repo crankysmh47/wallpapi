@@ -2,12 +2,12 @@ name: CI (Windows)
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "cursor/**" ]
   pull_request:
     branches: [ "master", "main" ]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -16,3 +16,20 @@ jobs:
       - name: Build
         shell: pwsh
         run: .\build.ps1
+
+      - name: Install smoke test
+        shell: pwsh
+        env:
+          WALLPAPI_CI_TEST: "1"
+        run: .\test-install.ps1
+
+      - name: Package
+        shell: pwsh
+        run: .\package.ps1
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallpapi-win64-package
+          path: dist/*.zip
+          if-no-files-found: error

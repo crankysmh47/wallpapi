@@ -1,58 +1,68 @@
 # Wallpapi
 
-Minimal live wallpaper engine for Windows — video on the desktop using Windows Media Foundation (no libmpv).
+[![CI (Windows)](https://github.com/crankysmh47/wallpapi/actions/workflows/ci-windows.yml/badge.svg)](https://github.com/crankysmh47/wallpapi/actions/workflows/ci-windows.yml)
 
-## What it does
+Minimal live wallpaper engine for Windows — video and images on your desktop using **Windows Media Foundation** (no libmpv required at runtime).
 
-- Plays video or image wallpapers on the desktop (WorkerW layer)
-- Pauses automatically during fullscreen apps and on battery (configurable)
-- Recovers after sleep / wake
-- Controlled from any terminal via `wp-cli`
-- Graphical control panel via `wp-ui` for non-terminal users
+## Download and install (end users)
 
-## Quick start
+**Requirements:** Windows 10 or 11 (64-bit)
 
-```powershell
-.\build.ps1
-.\run-engine.ps1
-```
+### From a release (easiest)
 
-In another terminal:
+1. Download the latest **`Wallpapi-*-win64.zip`** from [Releases](https://github.com/crankysmh47/wallpapi/releases).
+2. Extract the folder anywhere (e.g. `C:\Wallpapi`).
+3. Open **PowerShell** in that folder and run:
 
 ```powershell
-.\build\Release\wp-cli.exe status
-.\build\Release\wp-cli.exe list
-.\build\Release\wp-cli.exe set "wallpapers\your-video.mp4"
-```
-
-Or launch the control panel:
-
-```powershell
-.\build\Release\wp-ui.exe
-```
-
-## Install (PATH + startup)
-
-```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\install.ps1
 ```
 
-Then open a **new** terminal:
+4. Accept the license agreement when prompted.
+5. Open a **new** terminal and run:
 
 ```powershell
 wp-cli status
-wp-cli list
-wp-cli set "C:\path\to\video.mp4"
 wp-ui
 ```
 
-Or register from the build folder without copying:
+The engine starts at login via a startup shortcut. Use the **Wallpapi** desktop shortcut to open the control panel.
+
+### From source (developers)
 
 ```powershell
-.\register-startup.ps1
+git clone https://github.com/crankysmh47/wallpapi.git
+cd wallpapi
+.\install.ps1
 ```
 
-## Config (`config.toml`)
+You need **Visual Studio 2022** (Desktop C++) and **CMake 3.20+**. The installer builds automatically if binaries are missing.
+
+Full instructions: [docs/INSTALL.md](docs/INSTALL.md)
+
+## What you get
+
+| Component | Purpose |
+|-----------|---------|
+| `wp-engine` | Plays wallpapers on the desktop layer; pauses on battery/fullscreen |
+| `wp-cli` | Terminal control — list, set, config, toggles |
+| `wp-ui` | Minimal graphical panel for everyday use |
+
+**Install location:** `%LOCALAPPDATA%\Programs\Wallpapi`
+
+## Quick start (after install)
+
+```powershell
+wp-cli list
+wp-cli set "wallpapers\your-video.mp4"
+wp-cli status
+wp-ui
+```
+
+## Configuration
+
+Edit `%LOCALAPPDATA%\Programs\Wallpapi\config.toml` or use `wp-cli` / `wp-ui`:
 
 ```toml
 video = "wallpapers/example.mp4"
@@ -61,38 +71,54 @@ pause_on_battery = true
 pause_on_fullscreen = true
 ```
 
-Drop media into `wallpapers/` — if `video` is empty, the first file found is used.
+Drop media into the `wallpapers` folder. If `video` is empty, the first supported file is used automatically.
 
-## CLI commands
+## CLI reference
 
 | Command | Description |
 |---------|-------------|
-| `wp-cli set <path>` | Set video or image wallpaper |
-| `wp-cli list` | Files in `wallpapers/` |
-| `wp-cli next` | Cycle to next wallpaper |
-| `wp-cli random` | Pick a random wallpaper |
-| `wp-cli add <path>` | Copy file into `wallpapers/` and apply |
-| `wp-cli open` | Open `wallpapers/` in Explorer |
-| `wp-cli status` | Current path, paused, battery, fullscreen state |
-| `wp-cli config get` | Show config values |
-| `wp-cli config set <key> <true\|false>` | Set `pause_on_battery`, `pause_on_fullscreen`, or `muted` |
-| `wp-cli toggle pause_on_battery` | Toggle battery pause |
-| `wp-cli toggle pause_on_fullscreen` | Toggle fullscreen pause |
-| `wp-cli toggle muted` | Toggle mute |
-| `wp-cli pause` / `resume` | Manual pause/resume |
+| `wp-cli set <path>` | Set wallpaper |
+| `wp-cli list` | List `wallpapers/` |
+| `wp-cli next` / `random` | Cycle or random wallpaper |
+| `wp-cli add <path>` | Copy into `wallpapers/` and apply |
+| `wp-cli open` | Open wallpapers folder |
+| `wp-cli status` | Playback and system state |
+| `wp-cli config get` | Show settings |
+| `wp-cli config set <key> <true\|false>` | `pause_on_battery`, `pause_on_fullscreen`, `muted` |
+| `wp-cli toggle pause_on_battery` | Toggle setting |
+| `wp-cli pause` / `resume` | Manual playback control |
 | `wp-cli stop` | Shut down engine |
 
-## Control panel (`wp-ui`)
+## Build, package, and test
 
-Lightweight popup for everyday use:
+```powershell
+.\build.ps1              # Compile Release binaries
+.\test-install.ps1       # Smoke test (CI runs this)
+.\package.ps1            # Create dist\Wallpapi-<version>-win64.zip
+```
 
-- Toggle pause-on-battery, pause-on-fullscreen, and mute
-- Pause/resume and skip to next wallpaper
-- Browse wallpapers (double-click to apply)
-- Add wallpapers via file picker or open the wallpapers folder
+## Uninstall
 
-Requires `wp-engine` to be running.
+```powershell
+.\uninstall.ps1
+```
 
-## Legacy code
+Or run `%LOCALAPPDATA%\Programs\Wallpapi\uninstall.ps1`.
 
-Shaders, Lua scripting, tests, and the old spec live in `_legacy/` (gitignored). The full previous version remains in git history.
+## Legal
+
+| Document | Description |
+|----------|-------------|
+| [LICENSE](LICENSE) | MIT License (open source) |
+| [docs/EULA.md](docs/EULA.md) | End User License Agreement (shown during install) |
+| [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) | Dependency attributions |
+
+By installing, you accept the EULA. The software is provided **as is** without warranty.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues per [SECURITY.md](SECURITY.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

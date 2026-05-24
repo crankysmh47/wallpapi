@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          if ("${{ github.ref_name }}" -match '^v(.+)$') { $v = $Matches[1] }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Releasing version $v"
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          .\build.ps1
+          .\test-install.ps1
+
+      - name: Create distribution zip
+        shell: pwsh
+        run: .\package.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Wallpapi-${{ steps.ver.outputs.version }}-win64.zip
+          generate_release_notes: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
