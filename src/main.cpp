@@ -3,12 +3,14 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <filesystem>
+#include <sstream>
 #include "graphics.hpp"
 #include "monitor.hpp"
 #include "config.hpp"
 #include "ipc.hpp"
 #include "ipc_commands.hpp"
 #include "wallpaper_scan.hpp"
+#include "wallpaper_ops.hpp"
 #include "desktop_shell.hpp"
 
 static HWND g_workerw = nullptr;
@@ -311,15 +313,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         const auto parsed = wp::parse_ipc_command(cmd);
         switch (parsed.type) {
             case wp::IPCCommandType::SetVideo:
-            case wp::IPCCommandType::SetImage: {
-                if (!g_graphics) return "ERR engine-not-ready";
-                const auto opts = wp::VideoOptions{ .muted = g_config ? g_config->get_current().muted : true };
-                g_graphics->load_video(parsed.argument, opts);
-                if (g_config && !g_config->set_current_video(parsed.argument)) {
-                    return "ERR file-not-found";
-                }
-                return "OK set-video";
-            }
+            case wp::IPCCommandType::SetImage:
+                return apply_wallpaper_path(parsed.argument);
             case wp::IPCCommandType::Pause:
                 wp::g_system_state.is_paused = true;
                 if (g_graphics) g_graphics->pause_video();
