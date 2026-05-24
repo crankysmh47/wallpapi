@@ -25,6 +25,9 @@ public:
     bool save() const;
 
     bool set_current_video(const std::string& video_path);
+    bool set_muted(bool muted);
+    bool set_pause_on_battery(bool value);
+    bool set_pause_on_fullscreen(bool value);
 
     void start_watching(const std::string& path, std::function<void(const Config&)> callback);
     void stop_watching();

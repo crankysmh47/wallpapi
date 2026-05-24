@@ -21,6 +21,7 @@ if (Test-Path $srcWall) {
 Write-Host "Build complete."
 Write-Host "  Engine: $OutDir\wp-engine.exe"
 Write-Host "  CLI:    $OutDir\wp-cli.exe"
+Write-Host "  UI:     $OutDir\wp-ui.exe"
 Write-Host ""
 Write-Host "Run:  .\restart-engine.ps1"
 Write-Host "Install: .\install.ps1"

@@ -58,6 +58,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallRoot "wallpapers") 
 
 Copy-Item -Path (Join-Path $BuildDir "wp-engine.exe") -Destination $InstallRoot -Force
 Copy-Item -Path (Join-Path $BuildDir "wp-cli.exe") -Destination $InstallRoot -Force
+Copy-Item -Path (Join-Path $BuildDir "wp-ui.exe") -Destination $InstallRoot -Force
 Copy-Item -Path "config.toml" -Destination $InstallRoot -Force
 
 if (Test-Path "wallpapers") {

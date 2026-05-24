@@ -106,6 +106,27 @@ bool ConfigManager::set_current_video(const std::string& video_path) {
     return write_config_file(m_path, m_current);
 }
 
+bool ConfigManager::set_muted(bool muted) {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    m_current.muted = muted;
+    return write_config_file(m_path, m_current);
+}
+
+bool ConfigManager::set_pause_on_battery(bool value) {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    m_current.pause_on_battery = value;
+    return write_config_file(m_path, m_current);
+}
+
+bool ConfigManager::set_pause_on_fullscreen(bool value) {
+    std::scoped_lock lk(m_mutex);
+    if (m_path.empty()) return false;
+    m_current.pause_on_fullscreen = value;
+    return write_config_file(m_path, m_current);
+}
+
 void ConfigManager::start_watching(const std::string& path, std::function<void(const Config&)> callback) {
     m_callback = callback;
     m_running = true;

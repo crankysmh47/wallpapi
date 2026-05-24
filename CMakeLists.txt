@@ -32,6 +32,11 @@ add_executable(wp-engine WIN32
 )
 
 add_executable(wp-cli tools/cli.cpp)
+target_include_directories(wp-cli PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+add_executable(wp-ui WIN32 tools/ui.cpp)
+target_include_directories(wp-ui PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(wp-ui PRIVATE user32 gdi32 dwmapi comctl32 uxtheme shell32 comdlg32)
 
 target_include_directories(wp-engine PRIVATE
     ${CMAKE_SOURCE_DIR}/src
