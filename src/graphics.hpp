@@ -2,17 +2,13 @@
 #include <windows.h>
 #include <memory>
 #include <string>
-
-// mpv headers will be included in the implementation
-struct mpv_handle;
-namespace wp { class ShaderRenderer; }
-#include "mpv_options.hpp"
+#include "video_options.hpp"
 
 namespace wp {
 
 class VideoPlayer {
 public:
-    VideoPlayer(HWND hwnd, MpvRuntimeOptions options);
+    VideoPlayer(HWND hwnd, VideoOptions options);
     ~VideoPlayer();
 
     bool load(const std::string& path);
@@ -20,8 +16,8 @@ public:
     void pause();
 
 private:
-    MpvRuntimeOptions m_options;
-    mpv_handle* m_mpv = nullptr;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 class GraphicsEngine {
@@ -31,28 +27,28 @@ public:
 
     bool init(HWND hwnd);
     bool reinit(HWND hwnd);
-    void render();
     void cleanup();
 
     void resize(int width, int height);
     void reparent(HWND new_parent);
-    
-    void load_video(const std::string& path, MpvRuntimeOptions options);
-    bool load_shader(const std::string& path);
+
+    void load_video(const std::string& path, VideoOptions options);
     void pause_video();
     void resume_video();
-    void set_mouse(float x, float y, bool clicking);
+    void release_video();
 
 private:
     HWND m_hwnd = nullptr;
     HWND m_render_hwnd = nullptr;
+    HWND m_video_hwnd = nullptr;
     int m_width = 0;
     int m_height = 0;
 
     std::unique_ptr<VideoPlayer> m_video_player;
-    MpvRuntimeOptions m_video_options{};
-    std::unique_ptr<ShaderRenderer> m_shader_renderer;
-    bool m_shader_mode = false;
+    VideoOptions m_video_options{};
 };
+
+bool media_foundation_startup();
+void media_foundation_shutdown();
 
 } // namespace wp

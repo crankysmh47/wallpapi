@@ -1,13 +1,20 @@
 #include <iostream>
 #include <windows.h>
 #include <string>
-#include <vector>
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cout << "Usage: wp-cli <command> [args...]" << std::endl;
-        std::cout << "Example: wp-cli set-video \"wallpapers/video.mp4\"" << std::endl;
-        std::cout << "Other: wp-cli status | wp-cli list | wp-cli stop" << std::endl;
+        std::cout << "Wallpapi CLI\n"
+                  << "Usage: wp-cli <command> [args...]\n\n"
+                  << "Commands:\n"
+                  << "  set <path>           Set video or image wallpaper\n"
+                  << "  set-video <path>     Same as set\n"
+                  << "  set-image <path>     Same as set\n"
+                  << "  status               Show engine status\n"
+                  << "  list                 List wallpapers folder\n"
+                  << "  pause                Pause playback\n"
+                  << "  resume               Resume playback\n"
+                  << "  stop                 Shut down engine\n";
         return 1;
     }
 
@@ -18,7 +25,7 @@ int main(int argc, char* argv[]) {
     }
 
     const char* pipe_name = "\\\\.\\pipe\\wp_engine_pipe";
-    
+
     HANDLE pipe = CreateFileA(
         pipe_name,
         GENERIC_READ | GENERIC_WRITE,
@@ -28,7 +35,7 @@ int main(int argc, char* argv[]) {
     );
 
     if (pipe == INVALID_HANDLE_VALUE) {
-        std::cerr << "Error: Could not connect to engine pipe. Is the engine running?" << std::endl;
+        std::cerr << "Error: Could not connect to engine. Is wp-engine running?" << std::endl;
         return 1;
     }
 
@@ -39,7 +46,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Read a short response (server returns OK/ERR text).
     char buffer[4096];
     DWORD bytes_read = 0;
     if (ReadFile(pipe, buffer, sizeof(buffer) - 1, &bytes_read, nullptr)) {
@@ -51,7 +57,6 @@ int main(int argc, char* argv[]) {
     }
 
     std::cerr << "Error: No response from engine." << std::endl;
-
     CloseHandle(pipe);
     return 3;
 }

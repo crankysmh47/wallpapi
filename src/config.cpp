@@ -18,7 +18,6 @@ static std::string resolve_relative_to_config_dir(const std::string& config_path
     std::error_code ec;
     auto combined = std::filesystem::weakly_canonical(dir / p, ec);
     if (ec) {
-        // If canonicalization fails (e.g. target doesn't exist), keep a normalized join.
         combined = dir / p;
     }
     return combined.string();
@@ -46,11 +45,8 @@ static bool write_config_file(const std::string& path, const Config& cfg) {
         return r;
     };
 
-    // Keep format stable and human-editable.
     out << "video = " << quote(cfg.video_path) << "\n";
-    out << "shader = " << quote(cfg.shader_path) << "\n";
     out << "muted = " << (cfg.muted ? "true" : "false") << "\n";
-    out << "fps_limit = " << cfg.fps_limit << "\n";
     out << "pause_on_battery = " << (cfg.pause_on_battery ? "true" : "false") << "\n";
     out << "pause_on_fullscreen = " << (cfg.pause_on_fullscreen ? "true" : "false") << "\n";
     return true;
@@ -64,27 +60,25 @@ bool ConfigManager::load(const std::string& path) {
         auto data = toml::parse(path);
         Config next;
         next.video_path = toml::find_or<std::string>(data, "video", "");
-        next.shader_path = toml::find_or<std::string>(data, "shader", "");
         next.muted = toml::find_or<bool>(data, "muted", true);
-        next.fps_limit = toml::find_or<int>(data, "fps_limit", 60);
         next.pause_on_battery = toml::find_or<bool>(data, "pause_on_battery", true);
         next.pause_on_fullscreen = toml::find_or<bool>(data, "pause_on_fullscreen", true);
 
-        // Resolve relative media paths against the config file directory.
         next.video_path = resolve_relative_to_config_dir(path, next.video_path);
-        next.shader_path = resolve_relative_to_config_dir(path, next.shader_path);
+        if (!next.video_path.empty() && !std::filesystem::exists(next.video_path)) {
+            WP_WARN("Config video path does not exist, ignoring: {}", next.video_path);
+            next.video_path.clear();
+        }
 
         {
             std::scoped_lock lk(m_mutex);
             m_current = std::move(next);
             m_path = path;
         }
-        
-        WP_INFO("Config loaded: video={}, shader={}, muted={}, fps={}, pause_on_battery={}, pause_on_fullscreen={}",
+
+        WP_INFO("Config loaded: video={}, muted={}, pause_on_battery={}, pause_on_fullscreen={}",
             m_current.video_path,
-            m_current.shader_path,
             m_current.muted,
-            m_current.fps_limit,
             m_current.pause_on_battery,
             m_current.pause_on_fullscreen);
         return true;
@@ -100,24 +94,15 @@ bool ConfigManager::save() const {
     return write_config_file(m_path, m_current);
 }
 
-bool ConfigManager::save_as(const std::string& path) const {
-    std::scoped_lock lk(m_mutex);
-    return write_config_file(path, m_current);
-}
-
 bool ConfigManager::set_current_video(const std::string& video_path) {
     std::scoped_lock lk(m_mutex);
     if (m_path.empty()) return false;
-    m_current.video_path = resolve_relative_to_config_dir(m_path, video_path);
-    m_current.shader_path.clear();
-    return write_config_file(m_path, m_current);
-}
-
-bool ConfigManager::set_current_shader(const std::string& shader_path) {
-    std::scoped_lock lk(m_mutex);
-    if (m_path.empty()) return false;
-    m_current.shader_path = resolve_relative_to_config_dir(m_path, shader_path);
-    m_current.video_path.clear();
+    const auto resolved = resolve_relative_to_config_dir(m_path, video_path);
+    if (!std::filesystem::exists(resolved)) {
+        WP_ERROR("Refusing to save missing video path: {}", resolved);
+        return false;
+    }
+    m_current.video_path = resolved;
     return write_config_file(m_path, m_current);
 }
 
@@ -141,7 +126,6 @@ void ConfigManager::watch_loop(std::string path) {
     std::filesystem::path p = std::filesystem::absolute(path);
     auto dir = p.parent_path();
     if (dir.empty()) dir = ".";
-    auto filename = p.filename();
 
     m_dir_handle = CreateFileA(
         dir.string().c_str(),
@@ -166,9 +150,8 @@ void ConfigManager::watch_loop(std::string path) {
             m_dir_handle, buffer, sizeof(buffer), FALSE,
             FILE_NOTIFY_CHANGE_LAST_WRITE, &bytes_returned, nullptr, nullptr
         )) {
-            // Debounce or wait a bit for file to be fully written
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            
+
             if (load(path) && m_callback) {
                 m_callback(m_current);
             }

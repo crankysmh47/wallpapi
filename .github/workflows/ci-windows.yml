@@ -2,38 +2,17 @@ name: CI (Windows)
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "main" ]
 
 jobs:
-  build-test:
+  build:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup deps (mpv)
-        shell: pwsh
-        run: .\setup_deps.ps1
-
-      - name: Configure
-        shell: pwsh
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
       - name: Build
         shell: pwsh
-        run: cmake --build build --config Release
-
-      - name: Configure tests
-        shell: pwsh
-        run: cmake -S . -B build_test -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build tests
-        shell: pwsh
-        run: cmake --build build_test --config Release
-
-      - name: Run tests
-        shell: pwsh
-        run: ctest --test-dir build_test -C Release --output-on-failure --timeout 60
-
+        run: .\build.ps1

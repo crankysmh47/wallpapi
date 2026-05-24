@@ -6,8 +6,11 @@ out.txt
 err.txt
 latest.log
 deps/
+
+# Legacy / shelved code (kept locally, not in repo)
+_legacy/
+
 # Build directories
-build/
 bin/
 obj/
 
@@ -20,15 +23,11 @@ obj/
 
 # Logs
 *.log
-latest.log
 
-# Dependency sources (optional, but good if using FetchContent)
+# Dependency sources
 _deps/
 
-# MPV DLLs (we should probably push the libs/includes, but DLLs depend on build)
-# Actually, the user might want the DLLs to run it immediately. 
-# But usually you don't push DLLs.
-# I'll exclude build output but keep the deps/ folder.
+# MPV DLLs
 deps/lib/*.dll
 
 # OS files

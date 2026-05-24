@@ -1,28 +1,69 @@
 # Wallpapi
 
-A minimal, high-performance desktop video wallpaper engine for Windows.
+Minimal live wallpaper engine for Windows — video on the desktop using Windows Media Foundation (no libmpv).
 
-## Features
-- **Zero Overhead**: Renders directly to the desktop WorkerW layer using libmpv.
-- **Native Performance**: Uses hardware acceleration (DirectX/Vulkan) via mpv's gpu-next VO.
-- **Auto-Pause**: Automatically pauses video when fullscreen apps are detected or on battery.
-- **IPC Support**: Change wallpapers via command line or scripts.
+## What it does
 
-## Build
-Run `.\build.ps1` (requires CMake and MSVC).
+- Plays video or image wallpapers on the desktop (WorkerW layer)
+- Pauses automatically during fullscreen apps and on battery (configurable)
+- Recovers after sleep / wake
+- Controlled from any terminal via `wp-cli`
 
-## How to Run
-1.  **Clone the Repo**: Ensure you have `libmpv-2.dll` in your path or the build folder.
-2.  **Build**: Run `.\build.ps1` in PowerShell.
-3.  **Launch**: Run `.\build\Release\wp-engine.exe`.
-    - If your `config.toml` is empty or invalid, Wallpapi will automatically scan the `wallpapers/` folder and play the first MP4 it finds.
+## Quick start
 
-## Auto-Start (Windows)
-To make Wallpapi start automatically when you log in:
-1.  Open PowerShell as Administrator in the project folder.
-2.  Run `.\register-startup.ps1`.
-3.  That's it! The script creates a shortcut in your `shell:startup` folder and correctly sets the "Start In" directory so it can find its library files.
+```powershell
+.\build.ps1
+.\run-engine.ps1
+```
 
-## Controls
-- **CLI**: Use `wp-cli.exe set-video "path/to/video.mp4"` to change wallpaper.
-- **Config**: Edit `config.toml` to toggle auto-pause on battery or fullscreen.
+In another terminal:
+
+```powershell
+.\build\Release\wp-cli.exe status
+.\build\Release\wp-cli.exe set "wallpapers\your-video.mp4"
+```
+
+## Install (PATH + startup)
+
+```powershell
+.\install.ps1
+```
+
+Then open a **new** terminal:
+
+```powershell
+wp-cli status
+wp-cli list
+wp-cli set "C:\path\to\video.mp4"
+```
+
+Or register from the build folder without copying:
+
+```powershell
+.\register-startup.ps1
+```
+
+## Config (`config.toml`)
+
+```toml
+video = "wallpapers/example.mp4"
+muted = true
+pause_on_battery = true
+pause_on_fullscreen = true
+```
+
+Drop media into `wallpapers/` — if `video` is empty, the first file found is used.
+
+## CLI commands
+
+| Command | Description |
+|---------|-------------|
+| `wp-cli set <path>` | Set video or image wallpaper |
+| `wp-cli status` | Current path, paused, battery, fullscreen state |
+| `wp-cli list` | Files in `wallpapers/` |
+| `wp-cli pause` / `resume` | Manual pause/resume |
+| `wp-cli stop` | Shut down engine |
+
+## Legacy code
+
+Shaders, Lua scripting, tests, and the old spec live in `_legacy/` (gitignored). The full previous version remains in git history.
