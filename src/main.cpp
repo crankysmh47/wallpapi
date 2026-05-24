@@ -340,7 +340,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                        " fullscreen=" + fullscreen + " path=" + path;
             }
             case wp::IPCCommandType::ListWallpapers: {
-                const auto list = wp::list_files_by_extension("wallpapers", media_extensions());
+                const auto list = wp::list_wallpapers(media_extensions());
                 std::string resp = "OK wallpapers\n";
                 for (const auto& entry : list) {
                     resp += entry.string();
@@ -348,6 +348,80 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 }
                 return resp;
             }
+            case wp::IPCCommandType::GetConfig:
+                return format_config_status();
+            case wp::IPCCommandType::SetConfig: {
+                if (!g_config) return "ERR no-config";
+                bool value = false;
+                if (!wp::parse_bool(parsed.second_argument, &value)) {
+                    return "ERR invalid-bool";
+                }
+                const auto& key = parsed.argument;
+                bool ok = false;
+                if (key == "pause_on_battery") {
+                    ok = g_config->set_pause_on_battery(value);
+                    if (ok) apply_config_runtime_flags(g_config->get_current());
+                } else if (key == "pause_on_fullscreen") {
+                    ok = g_config->set_pause_on_fullscreen(value);
+                    if (ok) apply_config_runtime_flags(g_config->get_current());
+                } else if (key == "muted") {
+                    ok = g_config->set_muted(value);
+                    if (ok && g_graphics) {
+                        reload_current_wallpaper();
+                    }
+                } else if (key == "video") {
+                    return apply_wallpaper_path(parsed.second_argument);
+                } else {
+                    return "ERR unknown-config-key";
+                }
+                return ok ? ("OK config " + key + "=" + (value ? "true" : "false")) : "ERR config-save-failed";
+            }
+            case wp::IPCCommandType::TogglePauseOnBattery: {
+                if (!g_config) return "ERR no-config";
+                const bool next = !g_config->get_current().pause_on_battery;
+                if (!g_config->set_pause_on_battery(next)) return "ERR config-save-failed";
+                apply_config_runtime_flags(g_config->get_current());
+                return std::string("OK pause_on_battery=") + (next ? "true" : "false");
+            }
+            case wp::IPCCommandType::TogglePauseOnFullscreen: {
+                if (!g_config) return "ERR no-config";
+                const bool next = !g_config->get_current().pause_on_fullscreen;
+                if (!g_config->set_pause_on_fullscreen(next)) return "ERR config-save-failed";
+                apply_config_runtime_flags(g_config->get_current());
+                return std::string("OK pause_on_fullscreen=") + (next ? "true" : "false");
+            }
+            case wp::IPCCommandType::ToggleMuted: {
+                if (!g_config) return "ERR no-config";
+                const bool next = !g_config->get_current().muted;
+                if (!g_config->set_muted(next)) return "ERR config-save-failed";
+                reload_current_wallpaper();
+                return std::string("OK muted=") + (next ? "true" : "false");
+            }
+            case wp::IPCCommandType::OpenWallpapers:
+                return wp::open_wallpapers_folder() ? "OK open-wallpapers" : "ERR open-failed";
+            case wp::IPCCommandType::AddWallpaper: {
+                const auto copied = wp::copy_into_wallpapers(parsed.argument);
+                if (copied.empty()) return "ERR add-failed";
+                return apply_wallpaper_path(copied);
+            }
+            case wp::IPCCommandType::NextWallpaper: {
+                std::filesystem::path current;
+                if (g_config) current = g_config->get_current().video_path;
+                const auto next = wp::pick_next_wallpaper(current, media_extensions());
+                if (!next) return "ERR no-wallpapers";
+                return apply_wallpaper_path(next->string());
+            }
+            case wp::IPCCommandType::RandomWallpaper: {
+                const auto pick = wp::pick_random_wallpaper(media_extensions());
+                if (!pick) return "ERR no-wallpapers";
+                return apply_wallpaper_path(pick->string());
+            }
+            case wp::IPCCommandType::Help:
+                return "OK help\n"
+                       "set <path> | pause | resume | status | list | config get\n"
+                       "config set <key> <true|false>  (pause_on_battery, pause_on_fullscreen, muted, video)\n"
+                       "toggle pause_on_battery | toggle pause_on_fullscreen | toggle muted\n"
+                       "open | add <path> | next | random | stop";
             case wp::IPCCommandType::Stop:
                 PostThreadMessageA(g_main_thread_id, WM_QUIT, 0, 0);
                 return "OK stop";
